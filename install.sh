@@ -85,8 +85,12 @@ else
     echo "    未检测到 ufw，跳过"
 fi
 
-# 7. 启动服务
+# 7. 初始化数据库并启动服务
 echo "[7/8] 启动服务..."
+cd $INSTALL_DIR
+source venv/bin/activate
+python3 -c "from app import app, db; app.app_context().push(); db.create_all()"
+deactivate
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
 sudo systemctl start $SERVICE_NAME
