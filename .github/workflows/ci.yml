@@ -20,17 +20,14 @@ jobs:
     
     - name: Install dependencies
       run: |
-        cd trend-server
         pip install -r requirements.txt
         pip install pytest
     
     - name: Run tests
-      working-directory: trend-server
       run: |
         export PYTHONPATH=.
         pytest tests/test_app.py -v
     
     - name: Run application test
       run: |
-        cd trend-server
         timeout 5 python app.py || true
