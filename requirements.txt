@@ -1,0 +1,7 @@
+# Flask Web Framework
+Flask>=2.3.0
+# Database
+SQLAlchemy>=2.0.0
+Flask-SQLAlchemy>=3.0.0
+# CORS support
+Flask-Cors>=4.0.0

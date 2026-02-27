@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>趋势展示服务器</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        label {
+            font-weight: 500;
+            color: #555;
+        }
+        select, input[type="text"], input[type="number"] {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        select {
+            min-width: 150px;
+        }
+        input[type="text"] {
+            width: 150px;
+        }
+        button {
+            padding: 8px 20px;
+            background: #4a90d9;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #357abd;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .chart-wrapper {
+            position: relative;
+            height: 400px;
+        }
+        .report-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .report-form h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .report-form .form-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group label {
+            font-size: 13px;
+        }
+        .form-group input {
+            width: 200px;
+        }
+        .form-group button {
+            background: #28a745;
+        }
+        .form-group button:hover {
+            background: #218838;
+        }
+        .message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 趋势展示服务器</h1>
+        
+        <div class="report-form">
+            <h2>数据上报</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Key</label>
+                    <input type="text" id="reportKey" placeholder="输入key">
+                </div>
+                <div class="form-group">
+                    <label>Value</label>
+                    <input type="number" id="reportValue" placeholder="输入数值" step="any">
+                </div>
+                <div class="form-group">
+                    <button onclick="reportData()">上报数据</button>
+                </div>
+            </div>
+            <div id="reportMessage" class="message"></div>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>选择Key:</label>
+                <select id="keySelect" onchange="onKeyChange()">
+                    <option value="">-- 请选择 --</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>或输入Key:</label>
+                <input type="text" id="keyInput" placeholder="输入key搜索">
+                <button onclick="loadData()">查询</button>
+            </div>
+            <div class="control-group">
+                <label>数据条数:</label>
+                <input type="number" id="limitInput" value="50" min="1" max="1000" style="width: 80px;">
+                <button onclick="loadData()">刷新</button>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart-wrapper">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+        
+        async function loadKeys() {
+            try {
+                const resp = await fetch('/api/keys');
+                const keys = await resp.json();
+                const select = document.getElementById('keySelect');
+                select.innerHTML = '<option value="">-- 请选择 --</option>';
+                keys.forEach(key => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.textContent = key;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('加载keys失败:', e);
+            }
+        }
+        
+        async function loadData() {
+            const selectKey = document.getElementById('keySelect').value;
+            const inputKey = document.getElementById('keyInput').value;
+            const key = inputKey || selectKey;
+            const limit = document.getElementById('limitInput').value;
+            
+            if (!key) {
+                alert('请选择或输入key');
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`/api/data?key=${encodeURIComponent(key)}&limit=${limit}`);
+                const data = await resp.json();
+                renderChart(key, data);
+            } catch (e) {
+                console.error('加载数据失败:', e);
+                alert('加载数据失败');
+            }
+        }
+        
+        function onKeyChange() {
+            document.getElementById('keyInput').value = '';
+            const key = document.getElementById('keySelect').value;
+            if (key) {
+                loadData();
+            }
+        }
+        
+        function renderChart(key, data) {
+            const ctx = document.getElementById('trendChart').getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            const labels = data.map(d => d.x);
+            const values = data.map(d => d.y);
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: key,
+                        data: values,
+                        borderColor: '#4a90d9',
+                        backgroundColor: 'rgba(74, 144, 217, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '时间'
+                            },
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '值'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+        }
+        
+        async function reportData() {
+            const key = document.getElementById('reportKey').value;
+            const value = document.getElementById('reportValue').value;
+            const msgEl = document.getElementById('reportMessage');
+            
+            if (!key || !value) {
+                showMessage('请填写key和value', 'error');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('/api/report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({key, value: parseFloat(value)})
+                });
+                if (resp.ok) {
+                    showMessage('上报成功!', 'success');
+                    document.getElementById('reportValue').value = '';
+                    loadKeys();
+                    loadData();
+                } else {
+                    const err = await resp.json();
+                    showMessage('上报失败: ' + (err.error || '未知错误'), 'error');
+                }
+            } catch (e) {
+                showMessage('上报失败: ' + e.message, 'error');
+            }
+        }
+        
+        function showMessage(text, type) {
+            const msgEl = document.getElementById('reportMessage');
+            msgEl.textContent = text;
+            msgEl.className = 'message ' + type;
+            setTimeout(() => {
+                msgEl.className = 'message';
+            }, 3000);
+        }
+        
+        document.getElementById('keyInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loadData();
+            }
+        });
+        
+        window.onload = function() {
+            loadKeys();
+        };
+    </script>
+</body>
+</html>
